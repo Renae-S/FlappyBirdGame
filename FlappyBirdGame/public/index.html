@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Flappy Bird Game</title>
+    <script src="//cdn.jsdelivr.net/npm/phaser@3.52.0/dist/phaser.js"></script>
+</head>
+<body>
+
+    <script>
+    var config = {
+        type: Phaser.AUTO,
+        width: 350,
+        height: 520,
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 500 },
+                debug: false
+            }
+        },
+        scene: {
+            preload: preload,
+            create: create,
+            update: update
+        }
+    };
+
+    var game = new Phaser.Game(config);
+
+    var gamePlaying = false;
+    var gameOver = false;
+    var powerUp = false;
+
+    // Environment
+    var backgroundDay;
+    var backGroundNight;
+    var backgroundTweenIn;
+    var backgroundTweenOut;
+    var backgroundChanged = true;
+    var base;
+
+    var greenPipeLower;
+    var greenPipeUpper;
+    var redPipeLower;
+    var redPipeUpper;
+
+    var foregroundScrollSpeed = 3;
+    var backgroundScrollSpeed = 0.5;
+
+    // Player
+    var player;
+    var playerTween;
+
+    // Text
+    var startMessage;
+    var gameOverMessage;
+
+    // Score
+    var score = 0;
+    var scoreGroup;
+    var scoreUnit;
+    var scoreTen;
+    var scoreHundred;
+
+    const scorePositionLeft = 150;
+    const scorePositionMidLeft = 162.5;
+    const scorePositionMid = 175;
+    const scorePositionMidRight = 187.5;
+    const scorePositionRight = 200;
+
+    // Powerup
+    var powerUpItem;
+    var powerUpSpawnScore;
+    var timer = 9000;
+    var timerTriggered = false;
+
+    // Sounds
+    var die;
+    var hit;
+    var point;
+    var swoosh;
+    var wing;
+
+    function preload ()
+    {
+        // Load in sprite assets
+        // Load number sprites
+        for (var i = 0; i <= 9; i++)
+            this.load.image(String(i), 'assets/sprites/'+i+'.png');
+
+        // Load background sprites
+        this.load.image('background-day', 'assets/sprites/background-day.png');
+        this.load.image('background-night', 'assets/sprites/background-night.png');
+
+        // Load ground sprites
+        this.load.image('base', 'assets/sprites/base.png');
+
+        // Load bird sprites
+        this.load.image('bluebird-downflap', 'assets/sprites/bluebird-downflap.png');
+        this.load.image('bluebird-midflap', 'assets/sprites/bluebird-midflap.png');
+        this.load.image('bluebird-upflap', 'assets/sprites/bluebird-upflap.png');
+
+        this.load.image('redbird-downflap', 'assets/sprites/redbird-downflap.png');
+        this.load.image('redbird-midflap', 'assets/sprites/redbird-midflap.png');
+        this.load.image('redbird-upflap', 'assets/sprites/redbird-upflap.png');
+
+        this.load.image('yellowbird-downflap', 'assets/sprites/yellowbird-downflap.png');
+        this.load.image('yellowbird-midflap', 'assets/sprites/yellowbird-midflap.png');
+        this.load.image('yellowbird-upflap', 'assets/sprites/yellowbird-upflap.png');
+
+        // Load pipe sprites
+        this.load.image('pipe-green', 'assets/sprites/pipe-green.png');
+        this.load.image('pipe-red', 'assets/sprites/pipe-red.png');
+
+        // Load game message sprites
+        this.load.image('message', 'assets/sprites/message.png');
+        this.load.image('gameover', 'assets/sprites/gameover.png'); 
+
+        // Load audio assets
+        this.load.audio('die', ['assets/audio/die.ogg', 'assets/audio/die.wav']);
+        this.load.audio('hit', ['assets/audio/hit.ogg', 'assets/audio/hit.wav']);
+        this.load.audio('point', ['assets/audio/point.ogg', 'assets/audio/point.wav']);
+        this.load.audio('swoosh', ['assets/audio/swoosh.ogg', 'assets/audio/swoosh.wav']);
+        this.load.audio('wing', ['assets/audio/wing.ogg', 'assets/audio/wing.wav']);
+
+    }
+
+    function create ()
+    {
+        // Background
+        backgroundDay = this.add.tileSprite(175, 260, game.config.width, game.config.height, 'background-day');
+        backgroundNight = this.add.tileSprite(175, 260, game.config.width, game.config.height, 'background-night');
+
+        backgroundNight.alpha = 0;
+
+        backgroundTweenIn = this.tweens.add({
+            targets: backgroundNight,
+            alpha: 1.0,
+            delay: 0,
+            duration: 6000
+        });
+        backgroundTweenIn.pause();
+
+        backgroundTweenOut = this.tweens.add({
+            targets: backgroundNight,
+            alpha: 0.0,
+            delay: 0,
+            duration: 6000
+        });
+        backgroundTweenOut.pause();
+
+        // Create pipe groups
+        greenPipes = this.physics.add.group(0, 0);
+        greenPipes.overlapOnly = true;
+        redPipes = this.physics.add.group(0, 0);
+
+        var randomInt = Math.floor(Math.random() * 150) + -150;
+
+        greenPipeUpper = this.add.sprite(500, 50 + randomInt, 'pipe-green');
+        greenPipeLower = this.add.sprite(500, 450 + randomInt, 'pipe-green');
+
+        greenPipeUpper.angle = 180;
+        greenPipes.add(greenPipeUpper);
+        greenPipes.add(greenPipeLower);
+        Phaser.Actions.Call(greenPipes.getChildren(), function(pipe) { pipe.body.moves = false; })
+
+        randomInt = Math.floor(Math.random() * 150) + -150;
+
+        redPipeUpper = this.add.sprite(750, 50 + randomInt, 'pipe-red');
+        redPipeLower = this.add.sprite(750, 450 + randomInt, 'pipe-red');
+
+        redPipeUpper.angle = 180;
+        redPipes.add(redPipeUpper);
+        redPipes.add(redPipeLower);
+        Phaser.Actions.Call(redPipes.getChildren(), function(pipe) { pipe.body.moves = false; })
+
+        // Add ground as a tile sprite and make it a kinematic physics object
+        base = this.add.tileSprite(175, 490, game.config.width, 112, 'base');
+        this.physics.add.existing(base);
+        base.body.moves = false;
+
+        // Add the 'FlappyBird Get Ready' and 'Game Over' message
+        startMessage = this.add.image(175, 200, 'message');
+        gameOverMessage = this.add.image(175, 200, 'gameover');
+
+        // Hide 'Game Over' message
+        gameOverMessage.visible = false;
+
+        // Create a flying animation for each bird colour
+        this.anims.create({
+            key: 'bluebird-fly',
+            frames: [
+            { key: 'bluebird-downflap'},
+            { key: 'bluebird-midflap'},
+            { key: 'bluebird-upflap'},
+            ],
+            frameRate: 10,
+            repeat: -1
+        })
+
+        this.anims.create({
+            key: 'powerup-fly',
+            frames: [
+            { key: 'yellowbird-downflap'},
+            { key: 'redbird-midflap'},
+            { key: 'yellowbird-upflap'},
+            ],
+            frameRate: 10,
+            repeat: -1
+        })
+
+        // Create a player as physics object
+        player = this.physics.add.sprite(175, 260, 'bluebird-downflap');   
+        player.body.moves = false; 
+
+
+        // Make the player(bird) float in bobbing motion
+        playerTween = this.tweens.add({
+            targets: player,
+            props:
+            { 
+                y: { value: 243, duration: 500 }
+            },
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+            delay: 0
+        });
+
+        powerUpItem = this.physics.add.sprite(0, 0, 'yellowbird-upflap');
+        powerUpItem.body.moves = false;
+        powerUpItem.visible = false;
+        powerUpSpawnScore = Math.floor(Math.random() * 12) + 4;
+
+
+        // Add score
+        scoreGroup = this.add.group(0, 0);
+        scoreHundred = this.add.sprite(150, 50, '0');
+        scoreHundred.visible = false;
+        scoreTen = this.add.sprite(175, 50, '0');
+        scoreTen.visible = false;
+        scoreUnit = this.add.sprite(scorePositionMid, 50, '0');
+        scoreUnit.visible = false;
+
+        // Audio
+        die = this.sound.add('die');
+        hit = this.sound.add('hit');
+        point = this.sound.add('point');
+        swoosh = this.sound.add('swoosh');
+        wing = this.sound.add('wing');
+    }
+
+    function update()
+    {
+        // While game is not playing
+        if (gamePlaying == false && gameOver == false)
+        {
+            // When player clicks, stop tween
+            this.input.once('pointerdown', startGame);
+        }    
+        // While game playing
+        else if (gamePlaying == true && gameOver == false)
+        {
+            // Scrolls the background and ground
+            backgroundDay.tilePositionX += backgroundScrollSpeed;
+            backgroundNight.tilePositionX += backgroundScrollSpeed;
+            base.tilePositionX += foregroundScrollSpeed;
+            // and the pipes
+            Phaser.Actions.Call(greenPipes.getChildren(), function(pipe) { pipe.x -= foregroundScrollSpeed; })
+            Phaser.Actions.Call(redPipes.getChildren(), function(pipe) { pipe.x -= foregroundScrollSpeed; })
+         
+            // Spawn new pipes if they are off the left side of screen
+            if (greenPipeLower.x <= -30)
+                spawnPipes(greenPipes)
+     
+            else if (redPipeLower.x <= -30)
+                spawnPipes(redPipes)
+           
+            if ((greenPipeLower.x < player.x && greenPipeLower.x > player.x - 4) || (redPipeLower.x < player.x && redPipeLower.x > player.x - 4))
+                addToScore();
+
+
+            // Lets Flappy Bird fly on left mouse click
+            this.input.once('pointerdown', flyUp);
+
+            // Adjusts Flappy Bird's sprite based on vertical velocity
+            adjustSprite();
+
+            // Do check for ground overlap
+            // If ground overlap, game over
+            this.physics.add.overlap(player, base, onCollision, null, this);
+
+            // Do check for pipe overlap
+            // If pipe overlap, game over 
+            this.physics.add.overlap(player, greenPipes, onCollisionPipe, null, this);
+            this.physics.add.overlap(player, redPipes, onCollisionPipe, null, this);
+
+            // If score is a multiple of 10, change background
+            if (score % 10 == 0 && backgroundChanged == false)
+                changeBackground()
+          
+            if (score % 10 != 0 && backgroundChanged == true)
+                backgroundChanged = false;
+
+            if (score == powerUpSpawnScore)
+                spawnPowerUp();
+
+            powerUpItem.x -= foregroundScrollSpeed;
+
+            this.physics.add.overlap(player, powerUpItem, getPowerUp, null, this);
+
+            if (powerUp == true && timerTriggered == false)
+                var timedEvent = this.time.delayedCall(timer, stopPowerUp, [], this);
+
+        }
+        // While game over
+        else
+        {
+            // Restart game
+            this.input.once('pointerdown', restartGame);
+        }
+    }
+
+    function spawnPowerUp()
+    {
+        powerUpItem.visible = true;
+        powerUpItem.setPosition(player.x + 100, player.y);
+
+        powerUpSpawnScore = score + Math.floor(Math.random() * 12) + 4;
+    }
+
+    function getPowerUp() 
+    {
+        powerUpItem.visible = false;
+        powerUp = true;
+        player.play('powerup-fly');
+        timerTriggered = true;
+    }
+
+    function stopPowerUp()
+    {
+        powerUp = false;
+        player.play('bluebird-fly');
+        timertriggered = false;
+        timer = 9000;
+    }
+
+    function changeBackground()
+    {
+        if (backgroundNight.alpha == 0)
+            backgroundTweenIn.play();
+
+        else
+            backgroundTweenOut.play();
+  
+        backgroundChanged = true;
+    }
+
+    function addToScore()
+    {
+        point.play();
+        score += 1;
+
+        // If the score is over ten, show the tens value
+        if (score >= 10 && scoreTen.visible == false)
+        {
+            // show the tens value
+            scoreTen.visible = true;
+            // adjust positioning of values
+            scoreTen.setPosition(scorePositionMidLeft, 50);
+            scoreUnit.setPosition(scorePositionMidRight, 50);
+
+            // increase speed
+            foregroundScrollSpeed += 1;
+            backgroundScrollSpeed += 0.083;
+        }
+        // If the score is over a hundred, show the hundred value
+        if (score >= 100 && scoreHundred.visible == false)
+        {
+            // show the hundred value
+            scoreHundred.visible = true;
+            // adjust positioning of values
+            scoreHundred.setPosition(scorePositionLeft, 50);
+            scoreTen.setPosition(scorePositionMid, 50);
+            scoreUnit.setPosition(scorePositionRight, 50);
+        }
+
+        if (score % 100 == 0)
+            scoreHundred.setTexture(String(score / 100));
+
+        if (score % 10 == 0)
+            scoreTen.setTexture(String((score % 100) / 10));
+
+        scoreUnit.setTexture(String(score % 10));
+    }
+
+    function spawnPipes(pipes)
+    {
+        pipes.visible = false;
+
+        var randomInt = Math.floor(Math.random() * 150) + -150;
+
+        if (pipes == greenPipes)
+        {
+            greenPipeUpper.setPosition(500, 50 + randomInt);
+            greenPipeLower.setPosition(500, 450 + randomInt);
+        }
+        else
+        {
+            redPipeUpper.setPosition(500, 50 + randomInt);
+            redPipeLower.setPosition(500, 450 + randomInt);
+        }
+    }
+
+    function restartGame()
+    {
+        player.body.moves = false; 
+        backgroundChanged = true;
+        score = 0;
+        gamePlaying = false;
+        gameOver = false;
+        scoreHundred.visible = false;
+        scoreTen.visible = false;
+        scoreUnit.visible = false;
+        powerUp = false;
+        powerUp.visible = false;
+        powerUpSpawnScore = Math.floor(Math.random() * 12) + 4;
+        timer = 9000;
+        foregroundScrollSpeed = 3;
+        backgroundScrollSpeed = 0.5;
+
+        Phaser.Actions.Call(greenPipes.getChildren(), function(pipe) { pipe.x = 500; })
+        Phaser.Actions.Call(redPipes.getChildren(), function(pipe) { pipe.x = 750; })
+
+        gameOverMessage.visible = false;
+        startMessage.visible = true;
+
+        player.setAngle(0);
+        player.setPosition(175, 253);
+        playerTween.play();
+    }
+
+    function onCollisionPipe()
+    { 
+        if (powerUp == false)
+        {
+            if (gameOver == false)
+            {
+                hit.play();
+                die.play();
+                player.stop('bluebird-fly');
+            }
+
+            loseGame();
+        }
+    }
+
+    function onCollision()
+    {       
+        hit.play();
+        player.body.moves = false; 
+        player.stop('bluebird-fly');
+   
+        loseGame();
+    }
+
+    function loseGame()
+    {
+        gameOver = true;
+        gameOverMessage.visible = true;
+        playerTween.pause();
+    }
+
+
+    function flyUp()
+    {
+        if (gameOver == false)
+        {
+            player.body.setVelocityY(-225);
+            player.angle = -30;
+            swoosh.play();
+        }
+    }
+
+    function adjustSprite()
+    {
+        // If vertical velocity is positive, put wings up 
+        if (player.body.velocity.y > 0)
+        {
+            // Gradually make the bird face towards the ground and stop it from continually spinning
+            if (player.angle <= 90 && powerUp == false)
+                player.angle += player.body.velocity.y * 0.01;
+            else if (powerUp == true)
+                player.angle += player.body.velocity.y * 0.1;
+        } 
+    }
+
+    function startGame()
+    {
+        playerTween.pause();
+        player.body.moves = true;
+        player.play('bluebird-fly');
+        startMessage.visible = false;
+
+        gamePlaying = true;
+
+        scoreUnit.setPosition(scorePositionMid, 50);
+        scoreUnit.setTexture(String(score));
+        scoreUnit.visible = true;
+
+        player.on('animationrepeat', function () { wing.play(); }, this);
+
+        flyUp();
+    }
+
+    </script>
+
+</body>
+</html>
